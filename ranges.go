@@ -12,10 +12,13 @@ type Range struct {
 
 func printable(ch rune) string {
 	v := fmt.Sprintf("%q", ch)
-	return v[1:len(v)-1]
+	return v[1 : len(v)-1]
 }
 
 func (r Range) String() string {
+	if r.rmax < r.rmin {
+		return fmt.Sprintf("EMPTY")
+	}
 	if r.rmin == r.rmax {
 		return fmt.Sprintf("%s", printable(r.rmin))
 	}
@@ -70,44 +73,86 @@ func (rs *Ranges) Add1(ch rune) {
 }
 
 func (rs *Ranges) Add(rmin, rmax rune) {
-	newr := Range{rmin, rmax}
-	fmt.Printf("add %v to %v\n", newr, *rs)
+	if rmin > rmax {
+		return
+	}
 
-	for n, r := range *rs {
-		// union will merge with adjacent regions.
-		if (*rs)[n].union(newr) {
-			fmt.Printf("- XXX merged %v with %v to get %v\n", r, newr, (*rs)[n])
-			// We merged newr with rs[n].
-			// now merge as many rs[m] after rs[n] as possible with rs[n].
-			m := n
-			for m < len(*rs) && (*rs)[n].union((*rs)[m]) {
-				fmt.Printf("  also merged %v to get %v\n", (*rs)[m], (*rs)[n])
-				m ++
-			}
-
-			// discard merged ranges rs[n+1:m]
-			fmt.Printf("  and discard %v\n", (*rs)[n+1 : m])
-			*rs = append((*rs)[:n+1], (*rs)[m:]...)
-			fmt.Printf("  now %v\n", *rs)
-			return
-		}
-
-		if rmin < r.rmax {
-			// insert newr before rs[n].
-			fmt.Printf("- inserting %v between %v and %v\n", newr, (*rs)[:n], (*rs)[n:])
-			newrs := make(Ranges, len(*rs) + 1)
-			copy(newrs[:n], (*rs)[:n])
-			newrs[n] = newr
-			copy(newrs[n+1:], (*rs)[n:])
-			*rs = newrs
-			fmt.Printf("  now %v\n", *rs)
-			return
+	var before, after Ranges
+	for _, r := range *rs {
+		switch {
+		case r.rmax+1 < rmin:
+			// r entirely before (rmin..rmax).
+			before = append(before, r)
+		case rmax+1 < r.rmin:
+			// r entirely after (rmin..rmax).
+			after = append(after, r)
+		default:
+			// r overlaps with (rmin..rmax).
+			// update (rmin..rmax) to include all of r.
+			rmin = min(rmin, r.rmin)
+			rmax = max(rmax, r.rmax)
 		}
 	}
 
-	// append newr
-	fmt.Printf("- appending %v to %v\n", newr, *rs)
-	*rs = append(*rs, newr)
-	fmt.Printf("  now %v\n", *rs)
+	*rs = append(append(before, Range{rmin, rmax}), after...)
 }
 
+// Diff returns ranges only in as, ranges in both, and ranges only in bs.
+func Diff(as, bs Ranges) (Ranges, Ranges, Ranges) {
+	trimmed := func(pos rune, r Range) Range {
+		// r trimmed to start at pos or later.
+		return Range{max(pos, r.rmin), r.rmax}
+	}
+
+	var (
+		both, onlyA, onlyB Ranges
+		aIdx, bIdx         int
+		pos                rune
+	)
+	for aIdx < len(as) && bIdx < len(bs) {
+		// get the unconsumed part of a and b.
+		a := trimmed(pos, as[aIdx])
+		b := trimmed(pos, bs[bIdx])
+
+		// consume the smaller part of a or b, and advance pos.
+		switch {
+		case a.rmin < b.rmin:
+			pos = min(a.rmax+1, b.rmin)
+			onlyA.Add(a.rmin, pos-1)
+
+		case b.rmin < a.rmin:
+			pos = min(b.rmax+1, a.rmin)
+			onlyB.Add(b.rmin, pos-1)
+
+		case a.rmin == b.rmin:
+			pos = min(a.rmax+1, b.rmax+1)
+			both.Add(a.rmin, pos-1)
+		}
+
+		// move to next element if pos has completely consumed the current element.
+		if pos > a.rmax {
+			aIdx += 1
+		}
+		if pos > b.rmax {
+			bIdx += 1
+		}
+	}
+
+	for aIdx < len(as) {
+		// consume unconsumed parts of a.
+		a := trimmed(pos, as[aIdx])
+		onlyA.Add(a.rmin, a.rmax)
+		aIdx++
+		pos = a.rmax + 1
+	}
+
+	for bIdx < len(bs) {
+		// consume unconsumed parts of b.
+		b := trimmed(pos, bs[bIdx])
+		onlyB.Add(b.rmin, b.rmax)
+		bIdx++
+		pos = b.rmax + 1
+	}
+
+	return onlyA, both, onlyB
+}
