@@ -154,23 +154,23 @@ func advance(ns []*Nfa, ch rune) []*Nfa {
 	return l
 }
 
-func MatchNfa(n *Nfa, s string) bool {
-	// follow epsilon edges from start
-	ns := advanceEpsilon(n)
-	for pos, ch := range []rune(s) {
-		_ = pos
-		ns = advance(ns, ch)
-		if len(ns) == 0 {
-			//fmt.Printf("mismatch at %q %d\n", ch, pos)
-			return false
-		}
-	}
-
+func accepts(ns []*Nfa) bool {
 	for _, n := range ns {
 		if n.accept {
 			return true
 		}
 	}
-	//fmt.Printf("mismatch because not in accepting state\n")
 	return false
+}
+
+func MatchNfa(n *Nfa, s string) bool {
+	ns := advanceEpsilon(n) // follow epsilon edges from start
+	for pos, ch := range []rune(s) {
+		_ = pos
+		ns = advance(ns, ch)
+		if len(ns) == 0 {
+			return false
+		}
+	}
+	return accepts(ns)
 }
