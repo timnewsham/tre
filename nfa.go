@@ -120,3 +120,45 @@ func MakeNfa(p *Parsed) *Nfa {
 	frag.outTo(accept)
 	return frag.start
 }
+
+func advance(n *Nfa, ch rune) []*Nfa {
+	switch {
+	case n.split:
+		n1 := advance(n.next1, ch)
+		n2 := advance(n.next2, ch)
+		return append(n1, n2...)
+	case n.accept:
+		return nil
+	default:
+		//fmt.Printf("check %q with %v -> %v\n", ch, n.class, n.class.Contains(ch))
+		if n.class.Contains(ch) {
+			return []*Nfa{n.next1}
+		}
+		return nil
+	}
+}
+
+func MatchNfa(n *Nfa, s string) bool {
+	ns := []*Nfa{n}
+	for pos, ch := range []rune(s) {
+		newNs := []*Nfa{}
+		for _, n := range ns {
+			next := advance(n, ch)
+			newNs = append(newNs, next...)
+		}
+
+		ns = newNs
+		if len(ns) == 0 {
+			fmt.Printf("mismatch at %q %d\n", ch, pos)
+			return false
+		}
+	}
+
+	for _, n := range ns {
+		if n.accept {
+			return true
+		}
+	}
+	fmt.Printf("mismatch because not in accepting state\n")
+	return false
+}
