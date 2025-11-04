@@ -139,11 +139,22 @@ func MakeDfa(n *Nfa) *Dfa {
 
 	states, dstart, _ := addNfaSet(states, ns)
 
+	addEdge := func(d *Dfa, class Ranges, targ *Dfa) {
+		for n := range d.edges {
+			// if we already have an edge to targ
+			// just augment its class with the new class.
+			if d.edges[n].next == targ {
+				d.edges[n].class.AddRanges(class)
+				return
+			}
+		}
+		d.edges = append(d.edges, Edge{class: class, next: targ})
+	}
+
 	explore := func(d *Dfa, ns []*Nfa) {}
 	explore = func(d *Dfa, ns []*Nfa) {
 		// NOTE: some of the disjointed classes might still go to the same location.
-		// This code will add separate edges for each. They could be consolidated into a single edge
-		// with more work. TODO.
+		// These get merged in addEdge.
 		for _, class := range disjointClasses(ns) {
 			ch := class[0].rmin // exemplary char. the rest should flow the same way.
 			ns2 := advance(ns, ch)
@@ -154,8 +165,7 @@ func MakeDfa(n *Nfa) *Dfa {
 			var dtarg *Dfa
 			var visited bool
 			states, dtarg, visited = addNfaSet(states, ns2)
-			d.edges = append(d.edges, Edge{class: class, next: dtarg})
-
+			addEdge(d, class, dtarg)
 			if !visited {
 				explore(dtarg, ns2)
 			}

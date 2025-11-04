@@ -110,6 +110,12 @@ func (rs *Ranges) Add(rmin, rmax rune) {
 	*rs = append(append(before, Range{rmin, rmax}), after...)
 }
 
+func (rs *Ranges) AddRanges(rs2 Ranges) {
+	for _, r := range rs2 {
+		rs.Add(r.rmin, r.rmax)
+	}
+}
+
 func (rs Ranges) Invert() Ranges {
 	var outrs Ranges
 
