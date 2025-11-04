@@ -107,7 +107,7 @@ func (rs Ranges) Invert() Ranges {
 	var maxpos rune = 0x7fffffff
 	for _, r := range rs {
 		if pos < r.rmin {
-			outrs.Add(pos, r.rmin - 1)
+			outrs.Add(pos, r.rmin-1)
 		}
 		pos = r.rmax + 1
 	}

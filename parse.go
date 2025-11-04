@@ -23,30 +23,30 @@ const (
 )
 
 type Token struct {
-	typ TokType
-	lno int
-	lpos int
-	lit string
+	typ   TokType
+	lno   int
+	lpos  int
+	lit   string
 	class Ranges
-	err error
+	err   error
 }
 
 func (t Token) String() string {
-	return fmt.Sprintf("Token %v %d:%d %q %v %v", t.typ, t.lno, t.lpos, t.lit, t.class,  t.err)
+	return fmt.Sprintf("Token %v %d:%d %q %v %v", t.typ, t.lno, t.lpos, t.lit, t.class, t.err)
 }
 
 type Lexer struct {
-	inp *bufio.Reader
-	err error
-	lno int
+	inp  *bufio.Reader
+	err  error
+	lno  int
 	lpos int
 }
 
 func newLexer(s string) *Lexer {
 	return &Lexer{
-		inp: bufio.NewReader(strings.NewReader(s)),
-		err: nil,
-		lno: 1,
+		inp:  bufio.NewReader(strings.NewReader(s)),
+		err:  nil,
+		lno:  1,
 		lpos: 1,
 	}
 }
@@ -76,10 +76,10 @@ func (p *Lexer) nextRune() rune {
 	}
 
 	if ch == '\n' {
-		p.lno ++
+		p.lno++
 		p.lpos = 1
 	} else {
-		p.lpos ++
+		p.lpos++
 	}
 
 	return ch
@@ -110,7 +110,7 @@ func (p *Lexer) nextEscaped() rune {
 	case 'n':
 		return '\n'
 	default:
-		p.setErr(fmt.Errorf("unexpected %q", "\\" + string(ch)))
+		p.setErr(fmt.Errorf("unexpected %q", "\\"+string(ch)))
 		return 0
 	}
 }
@@ -126,7 +126,7 @@ func (p *Lexer) nextClass() Ranges {
 loop:
 	for {
 		ch := p.nextRune()
-		switch(ch) {
+		switch ch {
 		case 0:
 			return rs
 		case '[':
@@ -227,7 +227,7 @@ func (p *Lexer) next() Token {
 	case ']':
 		p.setErr(fmt.Errorf("unexpected %q", ch))
 		return Token{typ: TokErr, lno: lno, lpos: lpos, err: p.err}
-		
+
 	default:
 		if unicode.IsGraphic(ch) {
 			return Token{typ: TokChar, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
