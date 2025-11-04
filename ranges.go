@@ -11,6 +11,9 @@ type Range struct {
 }
 
 func printable(ch rune) string {
+	if ch == '-' {
+		return "\\-"
+	}
 	v := fmt.Sprintf("%q", ch)
 	return v[1 : len(v)-1]
 }
@@ -95,6 +98,24 @@ func (rs *Ranges) Add(rmin, rmax rune) {
 	}
 
 	*rs = append(append(before, Range{rmin, rmax}), after...)
+}
+
+func (rs Ranges) Invert() Ranges {
+	var outrs Ranges
+
+	var pos rune
+	var maxpos rune = 0x7fffffff
+	for _, r := range rs {
+		if pos < r.rmin {
+			outrs.Add(pos, r.rmin - 1)
+		}
+		pos = r.rmax + 1
+	}
+
+	if pos < maxpos {
+		outrs.Add(pos, maxpos)
+	}
+	return outrs
 }
 
 // Diff returns ranges only in as, ranges in both, and ranges only in bs.
