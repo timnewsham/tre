@@ -8,8 +8,9 @@ import (
 
 func main() {
 	// s := "(a|b)*\\\\\\[ x[cr-y]\\n"
-	//s := "hello(a|b)*world"
-	s := "hello|help|howdy|helx"
+	s := "(hello|help)(a|b)*world"
+	//s := "hello|help|howdy|helx"
+	//s := "(a|b|c)d"
 	n, err := tre.Parse(s)
 	if err != nil {
 		fmt.Printf("error %v\n", err)
@@ -20,7 +21,7 @@ func main() {
 	n.Print(1)
 	fmt.Printf("\n")
 	nfa := tre.MakeNfa(n)
-	nfa.Dot()
+	nfa.Dot(s)
 
 	match := tre.MatchNfa(nfa, "helloaabbaaworld")
 	fmt.Printf("match is %v\n", match)
@@ -28,5 +29,5 @@ func main() {
 	dfa := tre.MakeDfa(nfa)
 	fmt.Printf("got dfa %v\n", dfa)
 	fmt.Printf("dot\n")
-	dfa.Dot()
+	dfa.Dot(s)
 }

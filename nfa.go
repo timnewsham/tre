@@ -12,7 +12,7 @@ type Nfa struct {
 	accept bool
 }
 
-func (p *Nfa) Dot() {
+func (p *Nfa) Dot(label string) {
 	nextId := 0
 	ids := make(map[*Nfa]int)
 	ids[nil] = 999999 // in case something goes wrong
@@ -54,6 +54,7 @@ func (p *Nfa) Dot() {
 	}
 
 	fmt.Printf("digraph G {\n")
+	fmt.Printf("  graph [rankdir = LR, label=%q]\n", label)
 	walk(p)
 	fmt.Printf("}\n")
 }

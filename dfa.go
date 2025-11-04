@@ -16,7 +16,7 @@ type Dfa struct {
 	edges  []Edge
 }
 
-func (p *Dfa) Dot() {
+func (p *Dfa) Dot(label string) {
 	nextId := 0
 	ids := make(map[*Dfa]int)
 	ids[nil] = 999999 // in case something goes wrong
@@ -51,6 +51,7 @@ func (p *Dfa) Dot() {
 		}
 	}
 	fmt.Printf("digraph G {\n")
+	fmt.Printf("  graph [rankdir = LR, label=%q]\n", label)
 	walk(p)
 	fmt.Printf("}\n")
 }
