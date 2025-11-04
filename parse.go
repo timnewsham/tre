@@ -1,253 +1,316 @@
 package tre
 
 import (
-	"bufio"
 	"fmt"
 	"strings"
 	"unicode"
 )
 
-type TokType int
+const reservedChars = "\\()[]|*+-"
 
-//go:generate go run golang.org/x/tools/cmd/stringer -type=TokType
+type ParseType int
+
+//go:generate go run golang.org/x/tools/cmd/stringer -type=ParseType
 const (
-	TokErr TokType = iota
-	TokAlt
-	TokStar
-	TokPlus
-	TokOparen
-	TokCparen
-	TokDot
-	TokChar
-	TokClass
+	ParseErr ParseType = iota
+	ParseClass
+	ParseConcat
+	ParseAlt
+	ParseStar
+	ParsePlus
 )
 
-type Token struct {
-	typ   TokType
-	lno   int
-	lpos  int
-	lit   string
+type Parsed struct {
+	typ   ParseType
+	left  *Parsed
+	right *Parsed
 	class Ranges
-	err   error
 }
 
-func (t Token) String() string {
-	return fmt.Sprintf("Token %v %d:%d %q %v %v", t.typ, t.lno, t.lpos, t.lit, t.class, t.err)
+func (p *Parsed) Print(indent int) {
+	tab := strings.Repeat("  ", indent)
+	switch p.typ {
+	case ParseClass:
+		fmt.Printf("%s%v class=%v\n", tab, p.typ, p.class)
+	default:
+		fmt.Printf("%s%v\n", tab, p.typ)
+	}
+	if p.left != nil {
+		p.left.Print(indent + 1)
+	}
+	if p.right != nil {
+		p.right.Print(indent + 1)
+	}
 }
 
 type Lexer struct {
-	inp  *bufio.Reader
-	err  error
-	lno  int
-	lpos int
+	inp []rune
+	cur rune
+	pos int
+
+	dbgIndent int
 }
 
 func newLexer(s string) *Lexer {
-	return &Lexer{
-		inp:  bufio.NewReader(strings.NewReader(s)),
-		err:  nil,
-		lno:  1,
-		lpos: 1,
+	l := &Lexer{
+		inp: []rune(s),
+		pos: -1,
 	}
+	l.advance()
+	return l
 }
 
-func (p *Lexer) setErr(err error) {
-	if p.err == nil {
-		p.err = err
+func (p *Lexer) debug(s string) func() {
+	if false {
+		p.dbgIndent++
+		tab := strings.Repeat("--", p.dbgIndent)
+		fmt.Printf("%s %s at %d %q\n", tab, s, p.pos, string(p.inp[p.pos:]))
+		return func() {
+			fmt.Printf("%s end %s\n", tab, s)
+			p.dbgIndent--
+		}
 	}
+	return func() {}
 }
 
-// nextRune returns the next rune in the input stream.
-// On error, returns NIL with an error set.
-func (p *Lexer) nextRune() rune {
-	if p.err != nil {
-		return 0
-	}
-
-	ch, _, err := p.inp.ReadRune()
-	if err != nil {
-		p.err = err
-		return ch
-	}
-
-	if ch == 0 {
-		p.setErr(fmt.Errorf("unexpected NIL"))
-		return 0
-	}
-
-	if ch == '\n' {
-		p.lno++
-		p.lpos = 1
+func (p *Lexer) advance() {
+	if p.pos+1 < len(p.inp) {
+		p.pos++
+		p.cur = p.inp[p.pos]
 	} else {
-		p.lpos++
+		p.cur = 0 // EOF marker. hackity.
 	}
-
-	return ch
 }
 
 func (p *Lexer) peek() rune {
-	if p.err != nil {
-		return 0
-	}
-
-	ch, _, err := p.inp.ReadRune()
-	if err != nil {
-		p.err = err
-		return ch
-	}
-	p.inp.UnreadRune()
-	return ch
+	return p.cur
 }
 
-func (p *Lexer) nextEscaped() rune {
-	ch := p.nextRune()
-	if strings.ContainsRune("\\()|[]*+", ch) {
-		return ch
+func (p *Lexer) next() rune {
+	cur := p.cur
+	p.advance()
+	return cur
+}
+
+func showRune(ch rune) string {
+	if ch == 0 {
+		return "EOF"
+	}
+	return fmt.Sprintf("%q", ch)
+}
+
+func parseExpect(p *Lexer, want rune) error {
+	pos := p.pos
+	ch := p.next()
+	switch {
+	case ch == want:
+		return nil
+	default:
+		return fmt.Errorf("%d: expected %v got %v", pos, showRune(want), showRune(ch))
+	}
+}
+
+func parseEscaped(p *Lexer) (rune, error) {
+	pos := p.pos
+	ch := p.next()
+	if strings.ContainsRune(reservedChars, ch) {
+		return ch, nil
 	}
 	switch ch {
 	case 'r':
-		return '\r'
+		return '\r', nil
 	case 'n':
-		return '\n'
+		return '\n', nil
+	case 0:
+		return 0, fmt.Errorf("%d: unexpected EOF after \\", pos)
 	default:
-		p.setErr(fmt.Errorf("unexpected %q", "\\"+string(ch)))
-		return 0
+		return 0, fmt.Errorf("%d: unexpected %q", pos-1, "\\"+string(ch))
 	}
 }
 
-func (p *Lexer) nextClass() Ranges {
+func parseClassChar(p *Lexer) (rune, error) {
+	pos := p.pos
+	ch := p.next()
+	switch ch {
+	case '\\':
+		var err error
+		ch, err = parseEscaped(p)
+		if err != nil {
+			return 0, err
+		}
+	case 0:
+		return 0, fmt.Errorf("%d: unexpected EOF", pos)
+	default:
+		if strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
+			return 0, fmt.Errorf("unexpected %q", ch)
+		}
+	}
+	return ch, nil
+}
+
+func parseClassRange(p *Lexer) (rune, rune, error) {
+	defer p.debug("parseReClassRange")()
+	start, err := parseClassChar(p)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if p.peek() == '-' {
+		p.advance()
+		end, err := parseClassChar(p)
+		if err != nil {
+			return 0, 0, err
+		}
+		return start, end, nil
+	} else {
+		return start, start, nil
+	}
+}
+
+func parseClass(p *Lexer) (Ranges, error) {
+	defer p.debug("parseReClass")()
 	invert := false
 	if p.peek() == '^' {
+		p.advance()
 		invert = true
-		p.nextRune()
 	}
 
 	var rs Ranges
-loop:
-	for {
-		ch := p.nextRune()
-		switch ch {
-		case 0:
-			return rs
-		case '[':
-			p.setErr(fmt.Errorf("unexpected %q", ch))
-			return rs
-		case ']':
-			break loop
-		case '-':
-			p.setErr(fmt.Errorf("unexpected %q", ch))
-			return rs
-		case '\\':
-			ch = p.nextEscaped()
-			if p.err != nil {
-				return rs
-			}
-		default:
-			if !unicode.IsGraphic(ch) {
-				p.setErr(fmt.Errorf("unexpected %q", ch))
-				return rs
-			}
+	for p.peek() != ']' {
+		start, end, err := parseClassRange(p)
+		if err != nil {
+			return nil, err
 		}
+		rs.Add(start, end)
+	}
 
-		if p.peek() == '-' {
-			start := ch
-			p.nextRune()
-
-			ch := p.nextRune()
-			switch ch {
-			case 0:
-				return rs
-			case '[':
-				p.setErr(fmt.Errorf("unexpected %q", ch))
-				return rs
-			case ']':
-				rs.Add1('-')
-				break loop
-			case '-':
-				p.setErr(fmt.Errorf("unexpected %q", ch))
-				return rs
-			case '\\':
-				ch = p.nextEscaped()
-				if p.err != nil {
-					return rs
-				}
-			default:
-				if !unicode.IsGraphic(ch) {
-					p.setErr(fmt.Errorf("unexpected %q", ch))
-					return rs
-				}
-			}
-			rs.Add(start, ch)
-		} else {
-			rs.Add1(ch)
-		}
+	if err := parseExpect(p, ']'); err != nil {
+		return nil, err
 	}
 
 	if invert {
 		rs = rs.Invert()
 	}
-	return rs
+	return rs, nil
 }
 
-func (p *Lexer) next() Token {
-	lno := p.lno
-	lpos := p.lpos
-
-	ch := p.nextRune()
+func parseReChar(p *Lexer) (rune, error) {
+	defer p.debug("parseReChar")()
+	pos := p.pos
+	ch := p.next()
 	switch ch {
 	case 0:
-		return Token{typ: TokErr, lno: lno, lpos: lpos, err: p.err}
-
+		return 0, fmt.Errorf("%d: Unexpected EOF", pos)
 	case '\\':
-		ch := p.nextEscaped()
-		if p.err != nil {
-			return Token{typ: TokErr, lno: lno, lpos: lpos, err: p.err}
+		var err error
+		ch, err = parseEscaped(p)
+		if err != nil {
+			return 0, err
 		}
-		return Token{typ: TokChar, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
+	default:
+		if strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
+			return 0, fmt.Errorf("%d: Unexpected %q", pos, ch)
+		}
+	}
+	return ch, nil
+}
 
-	case '|':
-		return Token{typ: TokAlt, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
+// parseReAtom parses an re which is not compound or is parenthesized.
+// reAtom := char | charclass | ( re )
+func parseReAtom(lex *Lexer) (*Parsed, error) {
+	defer lex.debug("parseReAtom")()
+	pos := lex.pos
+	peek := lex.peek()
+	switch peek {
 	case '(':
-		return Token{typ: TokOparen, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
-	case ')':
-		return Token{typ: TokCparen, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
-	case '*':
-		return Token{typ: TokStar, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
-	case '+':
-		return Token{typ: TokPlus, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
-	case '.':
-		return Token{typ: TokDot, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
-	case '[':
-		class := p.nextClass()
-		if p.err != nil {
-			return Token{typ: TokErr, lno: lno, lpos: lpos, err: p.err}
+		lex.advance()
+		re1, err := parseRe(lex)
+		if err != nil {
+			return nil, err
 		}
-		return Token{typ: TokClass, lno: lno, lpos: lpos, err: p.err, class: class}
+		if err := parseExpect(lex, ')'); err != nil {
+			return nil, err
+		}
+		return re1, nil
 
-	case ']':
-		p.setErr(fmt.Errorf("unexpected %q", ch))
-		return Token{typ: TokErr, lno: lno, lpos: lpos, err: p.err}
+	case '|' | '*' | '+':
+		lex.next()
+		return nil, fmt.Errorf("%d: unexpected %q", pos, peek)
+
+	case '[':
+		lex.next()
+		rs, err := parseClass(lex)
+		if err != nil {
+			return nil, err
+		}
+		return &Parsed{typ: ParseClass, class: rs}, nil
 
 	default:
-		if unicode.IsGraphic(ch) {
-			return Token{typ: TokChar, lno: lno, lpos: lpos, err: p.err, lit: string(ch)}
+		ch, err := parseReChar(lex)
+		if err != nil {
+			return nil, err
 		}
-		p.setErr(fmt.Errorf("unexpected %q", ch))
-		return Token{typ: TokErr, lno: lno, lpos: lpos, err: p.err}
+		return &Parsed{typ: ParseClass, class: newRange1(ch)}, nil
 	}
+}
+
+// parseRe parses an re which may be compound.
+// re := reAtom | reAtom "|" re | reAtom re
+func parseRe(lex *Lexer) (*Parsed, error) {
+	defer lex.debug("parseRe")()
+	re1, err := parseReAtom(lex)
+	if err != nil {
+		return nil, err
+	}
+
+	for lex.peek() != 0 && lex.peek() != ')' {
+		switch lex.peek() {
+		case '*':
+			lex.advance()
+			re1 = &Parsed{typ: ParseStar, left: re1}
+		case '+':
+			lex.advance()
+			re1 = &Parsed{typ: ParsePlus, left: re1}
+		case '|':
+			lex.advance()
+			re2, err := parseRe(lex)
+			if err != nil {
+				return nil, err
+			}
+			re1 = &Parsed{typ: ParseAlt, left: re1, right: re2}
+		default:
+			re2, err := parseRe(lex)
+			if err != nil {
+				return nil, err
+			}
+			re1 = &Parsed{typ: ParseConcat, left: re1, right: re2}
+		}
+	}
+	return re1, nil
+}
+
+func Parse(s string) (*Parsed, error) {
+	lex := newLexer(s)
+	re, err := parseRe(lex)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := parseExpect(lex, 0); err != nil {
+		return nil, err
+	}
+	return re, nil
 }
 
 type Nfa struct {
+	class  Ranges // unless split is true
+	next1  *Nfa
+	next2  *Nfa // if split is true
+	split  bool
+	accept bool
 }
 
-func Parse(re string) (*Nfa, error) {
-	lex := newLexer(re)
-	for lex.err == nil {
-		tok := lex.next()
-		switch tok.typ {
-		default:
-			fmt.Printf("got token %v\n", tok)
-		}
-	}
-	return nil, fmt.Errorf("todo success")
+type Frag struct {
+	start *Nfa
+	tails []**Nfa
 }

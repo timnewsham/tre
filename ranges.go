@@ -53,6 +53,16 @@ func (r *Range) union(other Range) bool {
 // ranges contains pairs of min, max, in sorted order.
 type Ranges []Range
 
+func newRange(rmin, rmax rune) Ranges {
+	var rs Ranges
+	rs.Add(rmin, rmax)
+	return rs
+}
+
+func newRange1(ch rune) Ranges {
+	return newRange(ch, ch)
+}
+
 func (rs Ranges) String() string {
 	var strs []string
 	for _, r := range rs {
