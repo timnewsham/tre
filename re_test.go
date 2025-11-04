@@ -1,31 +1,38 @@
 package tre
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/alecthomas/assert"
 )
 
-type matchFunc func(t *testing.T, pat, s string) bool
+type matchFunc func(t *testing.T, pat, s string, wantMatch bool)
 
-func matchNfa(t *testing.T, pat, s string) bool {
+func matchNfa(t *testing.T, pat, s string, wantMatch bool) {
 	t.Helper()
 	p, err := Parse(pat)
 	assert.NoError(t, err)
 	nfa := MakeNfa(p)
-	return MatchNfa(nfa, s)
+	m := MatchNfa(nfa, s)
+	if m != wantMatch {
+		fmt.Printf("match %v with %v failed\n", s, pat)
+		fmt.Printf("parsed:\n")
+		p.Print(1)
+		fmt.Printf("nfa:\n")
+		nfa.Dot()
+	}
+	assert.Equal(t, m, wantMatch)
 }
 
 func expectMatch(t *testing.T, match matchFunc, pat, s string) {
 	t.Helper()
-	m := match(t, pat, s)
-	assert.True(t, m)
+	match(t, pat, s, true)
 }
 
 func expectNoMatch(t *testing.T, match matchFunc, pat, s string) {
 	t.Helper()
-	m := match(t, pat, s)
-	assert.False(t, m)
+	match(t, pat, s, false)
 }
 
 func TestRe(t *testing.T) {
@@ -45,8 +52,7 @@ func TestRe(t *testing.T) {
 	expectMatch(t, m, "(hello)|(goodbye)", "hello")
 	expectMatch(t, m, "(hello)|(goodbye)", "goodbye")
 	expectMatch(t, m, "(hello|goodbye)", "hello")
-	// XXX
-	//expectMatch(t, m, "(hello|goodbye)", "goodbye")
+	expectMatch(t, m, "(hello|goodbye)", "goodbye")
 	expectMatch(t, m, "x(a|b)*y", "xy")
 	expectNoMatch(t, m, "x(a|b)*y", "xab")
 	expectMatch(t, m, "x(a|b)*y", "xay")
@@ -59,8 +65,7 @@ func TestRe(t *testing.T) {
 	expectMatch(t, m, "x(a|b)+y", "xbay")
 	expectMatch(t, m, "x(a|b)+y", "xabay")
 	expectMatch(t, m, "x(a|b)+y", "xababy")
-	// XXX
-	//expectMatch(t, m, "((hello)|(goodbye))*", "")
-	//expectMatch(t, m, "((hello)|(goodbye))*", "goodbye")
-	//expectMatch(t, m, "((hello)|(goodbye))*", "goodbyehello")
+	expectMatch(t, m, "((hello)|(goodbye))*", "")
+	expectMatch(t, m, "((hello)|(goodbye))*", "goodbye")
+	expectMatch(t, m, "((hello)|(goodbye))*", "goodbyehello")
 }

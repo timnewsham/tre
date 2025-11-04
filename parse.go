@@ -254,16 +254,15 @@ func parseReAtom(lex *Lexer) (*Parsed, error) {
 	}
 }
 
-// parseRe parses an re which may be compound.
-// re := reAtom | reAtom "|" re | reAtom re
-func parseRe(lex *Lexer) (*Parsed, error) {
-	defer lex.debug("parseRe")()
+// reConcat := reAtom ("*" | "+") reConcat*
+func parseReConcat(lex *Lexer) (*Parsed, error) {
+	defer lex.debug("parseReConcat")()
 	re1, err := parseReAtom(lex)
 	if err != nil {
 		return nil, err
 	}
 
-	for lex.peek() != 0 && lex.peek() != ')' {
+	for lex.peek() != 0 && lex.peek() != ')' && lex.peek() != '|' {
 		switch lex.peek() {
 		case '*':
 			lex.advance()
@@ -271,20 +270,33 @@ func parseRe(lex *Lexer) (*Parsed, error) {
 		case '+':
 			lex.advance()
 			re1 = &Parsed{typ: ParsePlus, left: re1}
-		case '|':
-			lex.advance()
-			re2, err := parseRe(lex)
-			if err != nil {
-				return nil, err
-			}
-			re1 = &Parsed{typ: ParseAlt, left: re1, right: re2}
 		default:
-			re2, err := parseRe(lex)
+			re2, err := parseReConcat(lex)
 			if err != nil {
 				return nil, err
 			}
 			re1 = &Parsed{typ: ParseConcat, left: re1, right: re2}
 		}
+	}
+	return re1, nil
+}
+
+// parseRe parses an re which may be compound.
+// re := reConcat ("|" re)*
+func parseRe(lex *Lexer) (*Parsed, error) {
+	defer lex.debug("parseRe")()
+	re1, err := parseReConcat(lex)
+	if err != nil {
+		return nil, err
+	}
+
+	for lex.peek() == '|' {
+		lex.advance()
+		re2, err := parseRe(lex)
+		if err != nil {
+			return nil, err
+		}
+		re1 = &Parsed{typ: ParseAlt, left: re1, right: re2}
 	}
 	return re1, nil
 }

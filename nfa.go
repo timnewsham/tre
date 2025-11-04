@@ -121,35 +121,47 @@ func MakeNfa(p *Parsed) *Nfa {
 	return frag.start
 }
 
-func advance(n *Nfa, ch rune) []*Nfa {
-	switch {
-	case n.split:
-		n1 := advance(n.next1, ch)
-		n2 := advance(n.next2, ch)
-		return append(n1, n2...)
-	case n.accept:
-		return nil
-	default:
-		//fmt.Printf("check %q with %v -> %v\n", ch, n.class, n.class.Contains(ch))
-		if n.class.Contains(ch) {
-			return []*Nfa{n.next1}
+// addTargs adds targets that accept characters or are final states
+// while following epsilon edges and avoiding duplicates.
+func addTargs(n *Nfa, visited map[*Nfa]struct{}, l []*Nfa) []*Nfa {
+	_, ok := visited[n]
+	if !ok {
+		visited[n] = struct{}{}
+		switch {
+		case n.split:
+			l = addTargs(n.next1, visited, l)
+			l = addTargs(n.next2, visited, l)
+		default: // accepting states, and character consuming states.
+			l = append(l, n)
 		}
-		return nil
 	}
+	return l
+}
+
+func advanceEpsilon(n *Nfa) []*Nfa {
+	visited := make(map[*Nfa]struct{})
+	return addTargs(n, visited, nil)
+}
+
+func advance(ns []*Nfa, ch rune) []*Nfa {
+	visited := make(map[*Nfa]struct{})
+	var l []*Nfa
+	for _, n := range ns {
+		if !n.split && !n.accept && n.class.Contains(ch) {
+			l = addTargs(n.next1, visited, l)
+		}
+	}
+	return l
 }
 
 func MatchNfa(n *Nfa, s string) bool {
-	ns := []*Nfa{n}
+	// follow epsilon edges from start
+	ns := advanceEpsilon(n)
 	for pos, ch := range []rune(s) {
-		newNs := []*Nfa{}
-		for _, n := range ns {
-			next := advance(n, ch)
-			newNs = append(newNs, next...)
-		}
-
-		ns = newNs
+		_ = pos
+		ns = advance(ns, ch)
 		if len(ns) == 0 {
-			fmt.Printf("mismatch at %q %d\n", ch, pos)
+			//fmt.Printf("mismatch at %q %d\n", ch, pos)
 			return false
 		}
 	}
@@ -159,6 +171,6 @@ func MatchNfa(n *Nfa, s string) bool {
 			return true
 		}
 	}
-	fmt.Printf("mismatch because not in accepting state\n")
+	//fmt.Printf("mismatch because not in accepting state\n")
 	return false
 }
