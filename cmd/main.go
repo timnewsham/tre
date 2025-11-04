@@ -11,8 +11,12 @@ func main() {
 	n, err := tre.Parse(s)
 	if err != nil {
 		fmt.Printf("error %v\n", err)
-	} else {
-		fmt.Printf("parsed %s\n", s)
-		n.Print(1)
+		return
 	}
+
+	fmt.Printf("parsed %s\n", s)
+	n.Print(1)
+	fmt.Printf("\n")
+	nfa := tre.MakeNfa(n)
+	nfa.Dot()
 }

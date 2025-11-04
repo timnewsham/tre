@@ -301,16 +301,3 @@ func Parse(s string) (*Parsed, error) {
 	}
 	return re, nil
 }
-
-type Nfa struct {
-	class  Ranges // unless split is true
-	next1  *Nfa
-	next2  *Nfa // if split is true
-	split  bool
-	accept bool
-}
-
-type Frag struct {
-	start *Nfa
-	tails []**Nfa
-}
