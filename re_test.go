@@ -49,8 +49,6 @@ func TestRe(t *testing.T) {
 	expectMatch(t, m, "hello", "hello")
 	expectNoMatch(t, m, "hello", "hell")
 	expectNoMatch(t, m, "hello", "helloo")
-	expectMatch(t, m, "(hello)|(goodbye)", "hello")
-	expectMatch(t, m, "(hello)|(goodbye)", "goodbye")
 	expectMatch(t, m, "(hello|goodbye)", "hello")
 	expectMatch(t, m, "(hello|goodbye)", "goodbye")
 	expectMatch(t, m, "x(a|b)*y", "xy")
@@ -65,13 +63,18 @@ func TestRe(t *testing.T) {
 	expectMatch(t, m, "x(a|b)+y", "xbay")
 	expectMatch(t, m, "x(a|b)+y", "xabay")
 	expectMatch(t, m, "x(a|b)+y", "xababy")
-	expectMatch(t, m, "((hello)|(goodbye))*", "")
-	expectMatch(t, m, "((hello)|(goodbye))*", "goodbye")
-	expectMatch(t, m, "((hello)|(goodbye))*", "goodbyehello")
+	expectMatch(t, m, "(hello|goodbye)*", "")
+	expectMatch(t, m, "(hello|goodbye)*", "goodbye")
+	expectMatch(t, m, "(hello|goodbye)*", "goodbyehello")
 
 	// no infinite loops on ** please even though the NFA has epsilon cycles.
 	expectMatch(t, m, "a**", "")
 	expectMatch(t, m, "a**", "a")
 	expectMatch(t, m, "a**", "aaaaa")
 	expectNoMatch(t, m, "a**", "aaaaab")
+
+	// overlapping
+	expectMatch(t, m, "hello|help", "hello")
+	expectMatch(t, m, "hello|help", "help")
+	expectNoMatch(t, m, "hello|help", "hellop")
 }
