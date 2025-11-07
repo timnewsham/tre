@@ -19,8 +19,7 @@ func matchNfa(t *testing.T, pat, s string, wantMatch bool) {
 		fmt.Printf("match %v with %v failed\n", s, pat)
 		fmt.Printf("parsed:\n")
 		p.Print(1)
-		fmt.Printf("nfa:\n")
-		nfa.Dot(pat)
+		nfa.Dot("test-nfa.dot", pat)
 	}
 	assert.Equal(t, m, wantMatch)
 }
@@ -36,8 +35,7 @@ func matchDfa(t *testing.T, pat, s string, wantMatch bool) {
 		fmt.Printf("match %v with %v failed\n", s, pat)
 		fmt.Printf("parsed:\n")
 		p.Print(1)
-		fmt.Printf("nfa:\n")
-		dfa.Dot(pat)
+		dfa.Dot("test-dfa.dot", pat)
 	}
 	assert.Equal(t, m, wantMatch)
 }

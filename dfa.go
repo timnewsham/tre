@@ -2,6 +2,7 @@ package tre
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"unsafe"
 )
@@ -16,7 +17,20 @@ type Dfa struct {
 	edges  []Edge
 }
 
-func (p *Dfa) Dot(label string) {
+func (p *Dfa) Dot(fn, label string) {
+	var fp *os.File
+	if fn == "" {
+		fp = os.Stdout
+	} else {
+		var err error
+		fp, err = os.Create(fn)
+		if err != nil {
+			fmt.Printf("%v: %v\n", fn, err)
+			os.Exit(1)
+		}
+		defer fp.Close()
+	}
+
 	nextId := 0
 	ids := make(map[*Dfa]int)
 	ids[nil] = 999999 // in case something goes wrong
@@ -38,22 +52,22 @@ func (p *Dfa) Dot(label string) {
 		}
 
 		if p.accept {
-			fmt.Printf("  node_%d [label = \"accept\"]\n", id)
+			fmt.Fprintf(fp, "  node_%d [label = \"accept\"]\n", id)
 		} else {
-			fmt.Printf("  node_%d [label = \"%d\"]\n", id, id)
+			fmt.Fprintf(fp, "  node_%d [label = \"%d\"]\n", id, id)
 		}
 
 		for _, edge := range p.edges {
 			walk(edge.next)
 		}
 		for _, edge := range p.edges {
-			fmt.Printf("  node_%d -> node_%d [label = \"%v\"]\n", id, ids[edge.next], edge.class)
+			fmt.Fprintf(fp, "  node_%d -> node_%d [label = \"%v\"]\n", id, ids[edge.next], edge.class)
 		}
 	}
-	fmt.Printf("digraph G {\n")
-	fmt.Printf("  graph [rankdir = LR, label=%q]\n", label)
+	fmt.Fprintf(fp, "digraph G {\n")
+	fmt.Fprintf(fp, "  graph [rankdir = LR, label=%q]\n", label)
 	walk(p)
-	fmt.Printf("}\n")
+	fmt.Fprintf(fp, "}\n")
 }
 
 type NfaSet struct {

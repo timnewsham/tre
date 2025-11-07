@@ -2,6 +2,7 @@ package tre
 
 import (
 	"fmt"
+	"os"
 )
 
 type Nfa struct {
@@ -12,7 +13,20 @@ type Nfa struct {
 	accept bool
 }
 
-func (p *Nfa) Dot(label string) {
+func (p *Nfa) Dot(fn, label string) {
+	var fp *os.File
+	if fn == "" {
+		fp = os.Stdout
+	} else {
+		var err error
+		fp, err = os.Create(fn)
+		if err != nil {
+			fmt.Printf("%v: %v\n", fn, err)
+			os.Exit(1)
+		}
+		defer fp.Close()
+	}
+
 	nextId := 0
 	ids := make(map[*Nfa]int)
 	ids[nil] = 999999 // in case something goes wrong
@@ -34,9 +48,9 @@ func (p *Nfa) Dot(label string) {
 		}
 
 		if p.accept {
-			fmt.Printf("  node_%d [label = \"accept\"]\n", id)
+			fmt.Fprintf(fp, "  node_%d [label = \"accept\"]\n", id)
 		} else {
-			fmt.Printf("  node_%d [label = \"%d\"]\n", id, id)
+			fmt.Fprintf(fp, "  node_%d [label = \"%d\"]\n", id, id)
 		}
 
 		if p.next1 != nil {
@@ -46,17 +60,17 @@ func (p *Nfa) Dot(label string) {
 			walk(p.next2)
 		}
 		if p.split {
-			fmt.Printf("  node_%d -> node_%d\n", id, ids[p.next1])
-			fmt.Printf("  node_%d -> node_%d\n", id, ids[p.next2])
+			fmt.Fprintf(fp, "  node_%d -> node_%d\n", id, ids[p.next1])
+			fmt.Fprintf(fp, "  node_%d -> node_%d\n", id, ids[p.next2])
 		} else if !p.accept {
-			fmt.Printf("  node_%d -> node_%d [label = \"%v\"]\n", id, ids[p.next1], p.class)
+			fmt.Fprintf(fp, "  node_%d -> node_%d [label = \"%v\"]\n", id, ids[p.next1], p.class)
 		}
 	}
 
-	fmt.Printf("digraph G {\n")
-	fmt.Printf("  graph [rankdir = LR, label=%q]\n", label)
+	fmt.Fprintf(fp, "digraph G {\n")
+	fmt.Fprintf(fp, "  graph [rankdir = LR, label=%q]\n", label)
 	walk(p)
-	fmt.Printf("}\n")
+	fmt.Fprintf(fp, "}\n")
 }
 
 type Frag struct {
