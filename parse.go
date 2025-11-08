@@ -103,7 +103,7 @@ func showRune(ch rune) string {
 	return fmt.Sprintf("%q", ch)
 }
 
-func parseExpect(p *Lexer, want rune) error {
+func ParseExpect(p *Lexer, want rune) error {
 	pos := p.pos
 	ch := p.next()
 	switch {
@@ -117,7 +117,7 @@ func parseExpect(p *Lexer, want rune) error {
 func parseEscaped(p *Lexer) (rune, error) {
 	pos := p.pos
 	ch := p.next()
-	if ch != EOF && strings.ContainsRune(reservedChars, ch) {
+	if ch != EOF && unicode.IsPunct(ch) {
 		return ch, nil
 	}
 	switch ch {
@@ -130,7 +130,7 @@ func parseEscaped(p *Lexer) (rune, error) {
 	}
 }
 
-func parseClassChar(p *Lexer) (rune, error) {
+func parseClassChar(p *Lexer, terminal rune) (rune, error) {
 	pos := p.pos
 	ch := p.next()
 	switch ch {
@@ -141,23 +141,23 @@ func parseClassChar(p *Lexer) (rune, error) {
 			return 0, err
 		}
 	default:
-		if ch == EOF || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
+		if ch == EOF || ch == terminal || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
 			return 0, fmt.Errorf("%d: unexpected %v", pos, showRune(ch))
 		}
 	}
 	return ch, nil
 }
 
-func parseClassRange(p *Lexer) (rune, rune, error) {
+func parseClassRange(p *Lexer, terminal rune) (rune, rune, error) {
 	defer p.debug("parseReClassRange")()
-	start, err := parseClassChar(p)
+	start, err := parseClassChar(p, terminal)
 	if err != nil {
 		return 0, 0, err
 	}
 
 	if p.peek() == '-' {
 		p.advance()
-		end, err := parseClassChar(p)
+		end, err := parseClassChar(p, terminal)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -167,7 +167,7 @@ func parseClassRange(p *Lexer) (rune, rune, error) {
 	}
 }
 
-func parseClass(p *Lexer) (Ranges, error) {
+func parseClass(p *Lexer, terminal rune) (Ranges, error) {
 	defer p.debug("parseReClass")()
 	invert := false
 	if p.peek() == '^' {
@@ -177,14 +177,14 @@ func parseClass(p *Lexer) (Ranges, error) {
 
 	var rs Ranges
 	for p.peek() != ']' {
-		start, end, err := parseClassRange(p)
+		start, end, err := parseClassRange(p, terminal)
 		if err != nil {
 			return nil, err
 		}
 		rs.Add(start, end)
 	}
 
-	if err := parseExpect(p, ']'); err != nil {
+	if err := ParseExpect(p, ']'); err != nil {
 		return nil, err
 	}
 
@@ -194,7 +194,7 @@ func parseClass(p *Lexer) (Ranges, error) {
 	return rs, nil
 }
 
-func parseReChar(p *Lexer) (rune, error) {
+func parseReChar(p *Lexer, terminal rune) (rune, error) {
 	defer p.debug("parseReChar")()
 	pos := p.pos
 	ch := p.next()
@@ -207,7 +207,7 @@ func parseReChar(p *Lexer) (rune, error) {
 		}
 	// TODO: DOT
 	default:
-		if ch == EOF || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
+		if ch == EOF || ch == terminal || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
 			return 0, fmt.Errorf("%d: Unexpected %v", pos, showRune(ch))
 		}
 	}
@@ -216,18 +216,18 @@ func parseReChar(p *Lexer) (rune, error) {
 
 // parseReAtom parses an re which is not compound or is parenthesized.
 // reAtom := char | charclass | ( re )
-func parseReAtom(lex *Lexer) (*Parsed, error) {
+func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseReAtom")()
 	pos := lex.pos
 	peek := lex.peek()
 	switch peek {
 	case '(':
 		lex.advance()
-		re1, err := parseRe(lex)
+		re1, err := ParseRe(lex, terminal)
 		if err != nil {
 			return nil, err
 		}
-		if err := parseExpect(lex, ')'); err != nil {
+		if err := ParseExpect(lex, ')'); err != nil {
 			return nil, err
 		}
 		return re1, nil
@@ -239,14 +239,14 @@ func parseReAtom(lex *Lexer) (*Parsed, error) {
 
 	case '[':
 		lex.next()
-		rs, err := parseClass(lex)
+		rs, err := parseClass(lex, terminal)
 		if err != nil {
 			return nil, err
 		}
 		return &Parsed{typ: ParseClass, class: rs}, nil
 
 	default:
-		ch, err := parseReChar(lex)
+		ch, err := parseReChar(lex, terminal)
 		if err != nil {
 			return nil, err
 		}
@@ -255,14 +255,14 @@ func parseReAtom(lex *Lexer) (*Parsed, error) {
 }
 
 // reConcat := reAtom ("*" | "+") reConcat*
-func parseReConcat(lex *Lexer) (*Parsed, error) {
+func parseReConcat(lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseReConcat")()
-	re1, err := parseReAtom(lex)
+	re1, err := parseReAtom(lex, terminal)
 	if err != nil {
 		return nil, err
 	}
 
-	for lex.peek() != EOF && lex.peek() != ')' && lex.peek() != '|' {
+	for lex.peek() != EOF && lex.peek() != terminal && lex.peek() != ')' && lex.peek() != '|' {
 		switch lex.peek() {
 		case '*':
 			lex.advance()
@@ -272,7 +272,7 @@ func parseReConcat(lex *Lexer) (*Parsed, error) {
 			re1 = &Parsed{typ: ParsePlus, left: re1}
 		// TODO: ?
 		default:
-			re2, err := parseReConcat(lex)
+			re2, err := parseReConcat(lex, terminal)
 			if err != nil {
 				return nil, err
 			}
@@ -282,18 +282,22 @@ func parseReConcat(lex *Lexer) (*Parsed, error) {
 	return re1, nil
 }
 
-// parseRe parses an re which may be compound.
+// ParseRe parses a regular expression from lex which is terminated by terminal,
+// usually EOF. It is the main entry point for parsing regular expressions.
+// On successful parse the lexer should be at the terminal rune.
+//
+// ParseRe parses an re which may be compound.
 // re := reConcat ("|" re)*
-func parseRe(lex *Lexer) (*Parsed, error) {
+func ParseRe(lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseRe")()
-	re1, err := parseReConcat(lex)
+	re1, err := parseReConcat(lex, terminal)
 	if err != nil {
 		return nil, err
 	}
 
 	for lex.peek() == '|' {
 		lex.advance()
-		re2, err := parseRe(lex)
+		re2, err := ParseRe(lex, terminal)
 		if err != nil {
 			return nil, err
 		}
@@ -304,12 +308,36 @@ func parseRe(lex *Lexer) (*Parsed, error) {
 
 func Parse(s string) (*Parsed, error) {
 	lex := newLexer(s)
-	re, err := parseRe(lex)
+	re, err := ParseRe(lex, EOF)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := parseExpect(lex, EOF); err != nil {
+	if err := ParseExpect(lex, EOF); err != nil {
+		return nil, err
+	}
+	return re, nil
+}
+
+// ParseBounded parses an RE that is bounded by punctuation, such as /re/.
+func ParseBounded(s string) (*Parsed, error) {
+	lex := newLexer(s)
+
+	pos := lex.pos
+	terminal := lex.next()
+	if terminal == EOF || !unicode.IsPunct(terminal) {
+		return nil, fmt.Errorf("%d: unexpected bounding character %v", pos, showRune(terminal))
+	}
+
+	re, err := ParseRe(lex, terminal)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ParseExpect(lex, terminal); err != nil {
+		return nil, err
+	}
+	if err := ParseExpect(lex, EOF); err != nil {
 		return nil, err
 	}
 	return re, nil

@@ -24,6 +24,21 @@ func matchNfa(t *testing.T, pat, s string, wantMatch bool) {
 	assert.Equal(t, m, wantMatch)
 }
 
+func matchNfaBounded(t *testing.T, pat, s string, wantMatch bool) {
+	t.Helper()
+	p, err := ParseBounded(pat)
+	assert.NoError(t, err)
+	nfa := MakeNfa(p)
+	m := MatchNfa(nfa, s)
+	if m != wantMatch {
+		fmt.Printf("match %v with %v failed\n", s, pat)
+		fmt.Printf("parsed:\n")
+		p.Print(1)
+		nfa.Dot("test-nfa.dot", pat)
+	}
+	assert.Equal(t, m, wantMatch)
+}
+
 func matchDfa(t *testing.T, pat, s string, wantMatch bool) {
 	t.Helper()
 	p, err := Parse(pat)
@@ -104,4 +119,29 @@ func TestRe(t *testing.T) {
 			expectNoMatch(t, m, "hello|help", "hellop")
 		})
 	}
+}
+
+func TestReBounded(t *testing.T) {
+	m := matchNfaBounded
+	expectMatch(t, m, "/a*/", "")
+	expectMatch(t, m, "/a*/", "aaaaa")
+	expectMatch(t, m, "#a*#", "aaaaa")
+
+	_, err := ParseBounded("/foo/")
+	assert.NoError(t, err)
+
+	_, err = ParseBounded("/foo/ ")
+	assert.Error(t, err)
+
+	_, err = ParseBounded("/foo")
+	assert.Error(t, err)
+
+	_, err = ParseBounded("#/foo/bar/baz#")
+	assert.NoError(t, err)
+
+	_, err = ParseBounded("/\\/foo\\/bar\\/baz/")
+	assert.NoError(t, err)
+
+	_, err = ParseBounded("/foo/bar/baz/")
+	assert.Error(t, err)
 }
