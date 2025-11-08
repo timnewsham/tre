@@ -109,6 +109,13 @@ func nfaFrag(p *Parsed) *Frag {
 		alt := &Nfa{split: true, next2: left.start}
 		left.outTo(alt)
 		return frag(left.start, &alt.next1)
+	case ParseOpt:
+		// -->[left]-->
+		//  \--------->
+		left := nfaFrag(p.left)
+		alt := &Nfa{split: true, next2: left.start}
+		ends := append(left.ends, &alt.next1)
+		return frag(alt, ends...)
 	case ParseConcat:
 		// -->[left]-->[right]-->
 		left := nfaFrag(p.left)

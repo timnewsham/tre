@@ -116,11 +116,19 @@ func (rs *Ranges) AddRanges(rs2 Ranges) {
 	}
 }
 
+const maxRune rune = 0x7ffffffe // XXX hack, adding one doesnt roll over.
+
+func FullRanges() Ranges {
+	var rs Ranges
+	rs.Add(0, maxRune)
+	return rs
+}
+
 func (rs Ranges) Invert() Ranges {
 	var outrs Ranges
 
 	var pos rune
-	var maxpos rune = 0x7fffffff
+	maxpos := maxRune
 	for _, r := range rs {
 		if pos < r.rmin {
 			outrs.Add(pos, r.rmin-1)
@@ -152,6 +160,7 @@ func Diff(as, bs Ranges) (Ranges, Ranges, Ranges) {
 		b := trimmed(pos, bs[bIdx])
 
 		// consume the smaller part of a or b, and advance pos.
+		// XXX TODO fix this: we assume adding 1 to pos/max doesnt overflow!
 		switch {
 		case a.rmin < b.rmin:
 			pos = min(a.rmax+1, b.rmin)

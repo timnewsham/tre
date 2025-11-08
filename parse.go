@@ -18,6 +18,7 @@ const (
 	ParseAlt
 	ParseStar
 	ParsePlus
+	ParseOpt
 )
 
 type Parsed struct {
@@ -205,7 +206,6 @@ func parseReChar(p *Lexer, terminal rune) (rune, error) {
 		if err != nil {
 			return 0, err
 		}
-	// TODO: DOT
 	default:
 		if ch == EOF || ch == terminal || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
 			return 0, fmt.Errorf("%d: Unexpected %v", pos, showRune(ch))
@@ -215,7 +215,7 @@ func parseReChar(p *Lexer, terminal rune) (rune, error) {
 }
 
 // parseReAtom parses an re which is not compound or is parenthesized.
-// reAtom := char | charclass | ( re )
+// reAtom := "." | char | charclass | ( re )
 func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseReAtom")()
 	pos := lex.pos
@@ -232,8 +232,7 @@ func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
 		}
 		return re1, nil
 
-	// TODO: ?
-	case '|' | '*' | '+':
+	case '|' | '*' | '+' | '?':
 		lex.next()
 		return nil, fmt.Errorf("%d: unexpected %v", pos, showRune(peek))
 
@@ -245,6 +244,10 @@ func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
 		}
 		return &Parsed{typ: ParseClass, class: rs}, nil
 
+	case '.':
+		lex.next()
+		return &Parsed{typ: ParseClass, class: FullRanges()}, nil
+
 	default:
 		ch, err := parseReChar(lex, terminal)
 		if err != nil {
@@ -254,7 +257,7 @@ func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
 	}
 }
 
-// reConcat := reAtom ("*" | "+") reConcat*
+// reConcat := reAtom ("*" | "+" | "?") reConcat*
 func parseReConcat(lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseReConcat")()
 	re1, err := parseReAtom(lex, terminal)
@@ -270,7 +273,9 @@ func parseReConcat(lex *Lexer, terminal rune) (*Parsed, error) {
 		case '+':
 			lex.advance()
 			re1 = &Parsed{typ: ParsePlus, left: re1}
-		// TODO: ?
+		case '?':
+			lex.advance()
+			re1 = &Parsed{typ: ParseOpt, left: re1}
 		default:
 			re2, err := parseReConcat(lex, terminal)
 			if err != nil {

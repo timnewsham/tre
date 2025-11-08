@@ -107,6 +107,23 @@ func TestRe(t *testing.T) {
 			expectMatch(t, m, "(hello|goodbye)*", "goodbye")
 			expectMatch(t, m, "(hello|goodbye)*", "goodbyehello")
 
+			expectNoMatch(t, m, "a*aa*", "")
+			expectMatch(t, m, "a*aa*", "a")
+			expectMatch(t, m, "a*aa*", "aaaaaa")
+
+			expectMatch(t, m, ".*", "hello")
+			expectMatch(t, m, "a.*", "ahello")
+			expectMatch(t, m, ".*a", "helloa")
+			expectNoMatch(t, m, ".*a", "hellob")
+
+			expectMatch(t, m, "a?", "")
+			expectMatch(t, m, "a?", "a")
+			expectMatch(t, m, "b*a?b*", "a")
+			expectMatch(t, m, "b*a?b*", "bbbb")
+			expectMatch(t, m, "b*a?b*", "bbabb")
+			expectMatch(t, m, "a*a?a*", "")
+			expectMatch(t, m, "a*a?a*", "aaaaa")
+
 			// no infinite loops on ** please even though the NFA has epsilon cycles.
 			expectMatch(t, m, "a**", "")
 			expectMatch(t, m, "a**", "a")
