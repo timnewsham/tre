@@ -60,8 +60,10 @@ func newLexer(s string) *Lexer {
 	return l
 }
 
+const debugTrace bool = false
+
 func (p *Lexer) debug(s string) func() {
-	if false {
+	if debugTrace {
 		p.dbgIndent++
 		tab := strings.Repeat("--", p.dbgIndent)
 		fmt.Printf("%s %s at %d %q\n", tab, s, p.pos, string(p.inp[p.pos:]))
@@ -73,12 +75,14 @@ func (p *Lexer) debug(s string) func() {
 	return func() {}
 }
 
+const EOF rune = -1
+
 func (p *Lexer) advance() {
 	if p.pos+1 < len(p.inp) {
 		p.pos++
 		p.cur = p.inp[p.pos]
 	} else {
-		p.cur = 0 // EOF marker. hackity.
+		p.cur = EOF
 	}
 }
 
@@ -93,7 +97,7 @@ func (p *Lexer) next() rune {
 }
 
 func showRune(ch rune) string {
-	if ch == 0 {
+	if ch == EOF {
 		return "EOF"
 	}
 	return fmt.Sprintf("%q", ch)
@@ -113,7 +117,7 @@ func parseExpect(p *Lexer, want rune) error {
 func parseEscaped(p *Lexer) (rune, error) {
 	pos := p.pos
 	ch := p.next()
-	if strings.ContainsRune(reservedChars, ch) {
+	if ch != EOF && strings.ContainsRune(reservedChars, ch) {
 		return ch, nil
 	}
 	switch ch {
@@ -121,10 +125,8 @@ func parseEscaped(p *Lexer) (rune, error) {
 		return '\r', nil
 	case 'n':
 		return '\n', nil
-	case 0:
-		return 0, fmt.Errorf("%d: unexpected EOF after \\", pos)
 	default:
-		return 0, fmt.Errorf("%d: unexpected %q", pos-1, "\\"+string(ch))
+		return 0, fmt.Errorf("%d: unexpected %v after \\", pos-1, showRune(ch))
 	}
 }
 
@@ -138,11 +140,9 @@ func parseClassChar(p *Lexer) (rune, error) {
 		if err != nil {
 			return 0, err
 		}
-	case 0:
-		return 0, fmt.Errorf("%d: unexpected EOF", pos)
 	default:
-		if strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
-			return 0, fmt.Errorf("unexpected %q", ch)
+		if ch == EOF || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
+			return 0, fmt.Errorf("%d: unexpected %v", pos, showRune(ch))
 		}
 	}
 	return ch, nil
@@ -199,17 +199,16 @@ func parseReChar(p *Lexer) (rune, error) {
 	pos := p.pos
 	ch := p.next()
 	switch ch {
-	case 0:
-		return 0, fmt.Errorf("%d: Unexpected EOF", pos)
 	case '\\':
 		var err error
 		ch, err = parseEscaped(p)
 		if err != nil {
 			return 0, err
 		}
+	// TODO: DOT
 	default:
-		if strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
-			return 0, fmt.Errorf("%d: Unexpected %q", pos, ch)
+		if ch == EOF || strings.ContainsRune(reservedChars, ch) || !unicode.IsGraphic(ch) {
+			return 0, fmt.Errorf("%d: Unexpected %v", pos, showRune(ch))
 		}
 	}
 	return ch, nil
@@ -233,9 +232,10 @@ func parseReAtom(lex *Lexer) (*Parsed, error) {
 		}
 		return re1, nil
 
+	// TODO: ?
 	case '|' | '*' | '+':
 		lex.next()
-		return nil, fmt.Errorf("%d: unexpected %q", pos, peek)
+		return nil, fmt.Errorf("%d: unexpected %v", pos, showRune(peek))
 
 	case '[':
 		lex.next()
@@ -262,7 +262,7 @@ func parseReConcat(lex *Lexer) (*Parsed, error) {
 		return nil, err
 	}
 
-	for lex.peek() != 0 && lex.peek() != ')' && lex.peek() != '|' {
+	for lex.peek() != EOF && lex.peek() != ')' && lex.peek() != '|' {
 		switch lex.peek() {
 		case '*':
 			lex.advance()
@@ -270,6 +270,7 @@ func parseReConcat(lex *Lexer) (*Parsed, error) {
 		case '+':
 			lex.advance()
 			re1 = &Parsed{typ: ParsePlus, left: re1}
+		// TODO: ?
 		default:
 			re2, err := parseReConcat(lex)
 			if err != nil {
@@ -308,7 +309,7 @@ func Parse(s string) (*Parsed, error) {
 		return nil, err
 	}
 
-	if err := parseExpect(lex, 0); err != nil {
+	if err := parseExpect(lex, EOF); err != nil {
 		return nil, err
 	}
 	return re, nil
