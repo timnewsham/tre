@@ -3,7 +3,6 @@ package tre
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 )
 
@@ -152,6 +151,24 @@ func MakeNfa(p *Parsed) *Nfa {
 	return frag.start
 }
 
+// compareCaps compares the quality of capture lists.
+// It returns zero if both lists are identical, positive if n is better, and negative if m is better.
+// Better means more captures, with lower capture IDs.
+func compareCaps(n, m []int) int {
+	// prefer more caps
+	if len(n) != len(m) {
+		return len(n) - len(m)
+	}
+
+	for idx := range n {
+		d := n[idx] - m[idx]
+		if d != 0 {
+			return d
+		}
+	}
+	return 0
+}
+
 // addTargs adds targets that accept characters or are final states
 // while following epsilon edges and avoiding duplicates.
 func addTargs(n *Nfa, visited map[*Nfa]struct{}, l []*Nfa) []*Nfa {
@@ -174,18 +191,50 @@ func advanceEpsilon(n *Nfa) []*Nfa {
 	return addTargs(n, visited, nil)
 }
 
-func advance(ns []*Nfa, ch rune) []*Nfa {
-	visited := make(map[*Nfa]struct{})
-	var l []*Nfa
+// pruneNonGreedy goes through a set of nfa states that consume characters,
+// and discards any states that aren't greedy.
+func pruneNonGreedy(ms []*Nfa) []*Nfa {
+	var best []*Nfa
+	for _, n := range ms {
+		if len(best) == 0 {
+			best = []*Nfa{n}
+		} else {
+			d := compareCaps(n.caps, best[0].caps)
+			switch {
+			case d > 0: // n is better than everything in the best list.
+				//fmt.Printf("discard %v in favor of %v\n", best, n)
+				best = []*Nfa{n}
+			case d == 0: // n belongs on the best list
+				best = append(best, n)
+			case d < 0: // n is not worthy of the best list.
+				// dont add it.
+				//fmt.Printf("discard %v in favor of %v\n", n, best)
+			}
+		}
+	}
+	return best
+}
+
+func advance(ns []*Nfa, ch rune) ([]*Nfa, []int) {
+	var ms []*Nfa
 	for _, n := range ns {
 		switch {
 		case n.split:
 		case n.accept:
 		case n.class.Contains(ch):
-			l = addTargs(n.next1, visited, l)
+			ms = append(ms, n)
 		}
 	}
-	return l
+
+	visited := make(map[*Nfa]struct{})
+	var l []*Nfa
+	var caps []int
+	for _, m := range pruneNonGreedy(ms) {
+		l = addTargs(m.next1, visited, l)
+		caps = m.caps
+	}
+
+	return l, caps
 }
 
 func accepts(ns []*Nfa) bool {
@@ -197,33 +246,14 @@ func accepts(ns []*Nfa) bool {
 	return false
 }
 
-func getCaps(ns []*Nfa) []int {
-	var caps []int
-	var prev *Nfa
-	for _, n := range ns {
-		switch {
-		case n.accept:
-		default:
-			// XXX TODO: remove extra checks at some point.
-			if prev != nil && !slices.Equal(n.caps, prev.caps) {
-				fmt.Printf("XXXX inconsistent caps!! %v vs %v\n", prev, n)
-			}
-			prev = n
-			caps = n.caps
-		}
-	}
-	return caps
-}
-
 func MatchNfa(n *Nfa, s string) ([]string, bool) {
 	capGroups := make(map[int]*strings.Builder)
 	maxGroup := 0
 	ns := advanceEpsilon(n) // follow epsilon edges from start
 	for pos, ch := range []rune(s) {
 		_ = pos
-		caps := getCaps(ns)
-
-		ns = advance(ns, ch)
+		var caps []int
+		ns, caps = advance(ns, ch)
 		if len(ns) == 0 {
 			return nil, false
 		}
@@ -246,7 +276,6 @@ func MatchNfa(n *Nfa, s string) ([]string, bool) {
 	groups := make([]string, maxGroup)
 	for n, g := range capGroups {
 		groups[n-1] = g.String()
-		fmt.Printf("captured %d: %q\n", n, groups[n-1])
 	}
 	return groups, true
 }

@@ -16,6 +16,13 @@ func main() {
 		s = os.Args[1]
 	}
 
+	targ := "helloaabbaaworld"
+	if len(os.Args) > 2 {
+		targ = os.Args[2]
+	}
+
+	fmt.Printf("expr %q targ %q\n", s, targ)
+
 	n, err := tre.Parse(s)
 	if err != nil {
 		fmt.Printf("error %v\n", err)
@@ -26,12 +33,15 @@ func main() {
 	n.Print(1)
 	fmt.Printf("\n")
 	nfa := tre.MakeNfa(n)
-	nfa.Dot("nfa.dot", s)
+	nfa.Dot("main-nfa.dot", s)
 
-	match := tre.MatchNfa(nfa, "helloaabbaaworld")
-	fmt.Printf("match is %v\n", match)
+	groups, match := tre.MatchNfa(nfa, targ)
+	fmt.Printf("match is %v %v\n", match, groups)
 
 	dfa := tre.MakeDfa(nfa)
 	fmt.Printf("got dfa %v\n", dfa)
-	dfa.Dot("dfa.dot", s)
+	dfa.Dot("main-dfa.dot", s)
+
+	groups, match = tre.MatchDfa(dfa, targ)
+	fmt.Printf("match is %v %v\n", match, groups)
 }

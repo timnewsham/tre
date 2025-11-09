@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"unsafe"
 )
 
@@ -14,6 +15,7 @@ type Edge struct {
 
 type Dfa struct {
 	accept bool
+	caps   []int
 	edges  []Edge
 }
 
@@ -51,10 +53,15 @@ func (p *Dfa) Dot(fn, label string) {
 			return
 		}
 
-		if p.accept {
-			fmt.Fprintf(fp, "  node_%d [label = \"accept\"]\n", id)
+		lab := "accept"
+		if !p.accept {
+			lab = fmt.Sprintf("%d", id)
+		}
+
+		if len(p.caps) > 0 {
+			fmt.Fprintf(fp, "  node_%d [label = \"%v\\ncaps=%v\"]\n", id, lab, p.caps)
 		} else {
-			fmt.Fprintf(fp, "  node_%d [label = \"%d\"]\n", id, id)
+			fmt.Fprintf(fp, "  node_%d [label = \"%v\"]\n", id, lab)
 		}
 
 		for _, edge := range p.edges {
@@ -91,18 +98,16 @@ func eqNfas(a, b []*Nfa) bool {
 
 // addNfaSet finds set in l, or adds a new entry for set to l.
 // It returns the updated list, the entry for s, and true if the item already existed, and false if it was newly created.
-func addNfaSet(l []NfaSet, set []*Nfa) ([]NfaSet, *Dfa, bool) {
+func addNfaSet(l []NfaSet, set []*Nfa, caps []int) ([]NfaSet, *Dfa, bool) {
 	sortNfas(set)
 
 	for _, state := range l {
-		if eqNfas(state.set, set) {
-			//fmt.Printf("nfa set %v exists\n", set)
+		if eqNfas(state.set, set) && slices.Equal(state.dfa.caps, caps) {
 			return l, state.dfa, true
 		}
 	}
 
-	//fmt.Printf("creating nfa set %v\n", set)
-	dfa := &Dfa{accept: accepts(set)}
+	dfa := &Dfa{accept: accepts(set), caps: caps}
 	l = append(l, NfaSet{set, dfa})
 	return l, dfa, false
 }
@@ -152,7 +157,7 @@ func MakeDfa(n *Nfa) *Dfa {
 	var states []NfaSet
 	ns := advanceEpsilon(n) // follow epsilon edges from start
 
-	states, dstart, _ := addNfaSet(states, ns)
+	states, dstart, _ := addNfaSet(states, ns, []int{})
 
 	addEdge := func(d *Dfa, class Ranges, targ *Dfa) {
 		for n := range d.edges {
@@ -172,14 +177,14 @@ func MakeDfa(n *Nfa) *Dfa {
 		// These get merged in addEdge.
 		for _, class := range disjointClasses(ns) {
 			ch := class[0].rmin // exemplary char. the rest should flow the same way.
-			ns2 := advance(ns, ch)
+			ns2, caps := advance(ns, ch)
 			if len(ns2) == 0 {
 				continue
 			}
 
 			var dtarg *Dfa
 			var visited bool
-			states, dtarg, visited = addNfaSet(states, ns2)
+			states, dtarg, visited = addNfaSet(states, ns2, caps)
 			addEdge(d, class, dtarg)
 			if !visited {
 				explore(dtarg, ns2)
@@ -191,22 +196,42 @@ func MakeDfa(n *Nfa) *Dfa {
 	return dstart
 }
 
-func MatchDfa(d *Dfa, s string) ([]string, bool) {
-nextChar:
-	for _, ch := range []rune(s) {
-		for _, edge := range d.edges {
-			if edge.class.Contains(ch) {
-				d = edge.next
-				continue nextChar
-			}
+func matchChar(d *Dfa, ch rune) *Dfa {
+	for _, edge := range d.edges {
+		if edge.class.Contains(ch) {
+			return edge.next
 		}
-		return nil, false
+	}
+	return nil
+}
+
+func MatchDfa(d *Dfa, s string) ([]string, bool) {
+	capGroups := make(map[int]*strings.Builder)
+	maxGroup := 0
+	for _, ch := range []rune(s) {
+		d = matchChar(d, ch)
+		if d == nil {
+			return nil, false
+		}
+
+		for _, capIdx := range d.caps {
+			if _, ok := capGroups[capIdx]; !ok {
+				if capIdx > maxGroup {
+					maxGroup = capIdx
+				}
+				capGroups[capIdx] = &strings.Builder{}
+			}
+			capGroups[capIdx].WriteRune(ch)
+		}
 	}
 
 	if !d.accept {
 		return nil, false
 	}
 
-	var groups []string // XXX TODO fill in captures
+	groups := make([]string, maxGroup)
+	for n, g := range capGroups {
+		groups[n-1] = g.String()
+	}
 	return groups, true
 }

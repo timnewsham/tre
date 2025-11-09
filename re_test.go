@@ -19,7 +19,7 @@ func matchNfa(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string)
 
 	if m != wantMatch || !slices.Equal(groups, wantGroups) {
 		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
-		fmt.Printf("parsed:\n")
+		fmt.Printf("parsed (see test-nfa.dot):\n")
 		p.Print(1)
 		nfa.Dot("test-nfa.dot", pat)
 	}
@@ -141,6 +141,12 @@ func TestRe(t *testing.T) {
 			expectNoMatch(t, m, "hello|help", "hellop")
 
 			expectMatch(t, m, "he(?ll)o(?a*)", "helloaaa", "ll", "aaa")
+
+			// greedy matching should capture all the a's in the group.
+			expectMatch(t, m, "a(?a*)a?b", "aaaab", "aaa")
+
+			// greedy matching should make this match fail because all the a's are in the group.
+			expectNoMatch(t, m, "a(?a*)ab", "aaaab")
 		})
 	}
 }
