@@ -151,6 +151,14 @@ func MakeNfa(p *Parsed) *Nfa {
 	return frag.start
 }
 
+func NewNfa(re string) (*Nfa, error) {
+	parse, err := Parse(re)
+	if err != nil {
+		return nil, err
+	}
+	return MakeNfa(parse), nil
+}
+
 // compareCaps compares the quality of capture lists.
 // It returns zero if both lists are identical, positive if n is better, and negative if m is better.
 // Better means more captures, with lower capture IDs.
@@ -246,7 +254,7 @@ func accepts(ns []*Nfa) bool {
 	return false
 }
 
-func MatchNfa(n *Nfa, s string) ([]string, bool) {
+func (n *Nfa) Match(s string) ([]string, bool) {
 	capGroups := make(map[int]*strings.Builder)
 	maxGroup := 0
 	ns := advanceEpsilon(n) // follow epsilon edges from start
@@ -273,9 +281,12 @@ func MatchNfa(n *Nfa, s string) ([]string, bool) {
 		return nil, false
 	}
 
-	groups := make([]string, maxGroup)
-	for n, g := range capGroups {
-		groups[n-1] = g.String()
+	var groups []string
+	if maxGroup > 0 {
+		groups = make([]string, maxGroup)
+		for n, g := range capGroups {
+			groups[n-1] = g.String()
+		}
 	}
 	return groups, true
 }

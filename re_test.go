@@ -2,7 +2,6 @@ package tre
 
 import (
 	"fmt"
-	"slices"
 	"testing"
 
 	"github.com/alecthomas/assert"
@@ -10,64 +9,86 @@ import (
 
 type matchFunc func(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string)
 
+func debugParse(t *testing.T, pat string) *Parsed {
+	p, err := Parse(pat)
+	if err != nil {
+		fmt.Printf("Parse error %v on %v\n", err, pat)
+		p.Print(1)
+	}
+	assert.NoError(t, err)
+
+	fmt.Printf("parsed %v: \n", pat)
+	p.Print(1)
+	return p
+}
+
+func debugNfa(t *testing.T, fn, pat string) *Nfa {
+	nfa := MakeNfa(debugParse(t, pat))
+	if fn != "" {
+		fmt.Printf("writing NFA to %v\n", fn)
+		nfa.Dot(fn, pat)
+	}
+	return nfa
+}
+
+func debugDfa(t *testing.T, fn, pat string) *Dfa {
+	nfa := debugNfa(t, "", pat)
+	dfa := MakeDfa(nfa)
+	if fn != "" {
+		fmt.Printf("writing DFA to %v\n", fn)
+		dfa.Dot(fn, pat)
+	}
+	return dfa
+}
+
+func match(t *testing.T, mach Matcher, s string, wantMatch bool, wantGroups ...string) {
+	//t.Helper()
+	groups, match := mach.Match(s)
+	assert.Equal(t, match, wantMatch)
+	assert.Equal(t, groups, wantGroups)
+}
+
 func matchNfa(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string) {
 	//t.Helper()
-	p, err := Parse(pat)
+	mach, err := NewNfa(pat)
 	assert.NoError(t, err)
-	nfa := MakeNfa(p)
-	groups, m := MatchNfa(nfa, s)
-
-	if m != wantMatch || !slices.Equal(groups, wantGroups) {
-		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
-		fmt.Printf("parsed (see test-nfa.dot):\n")
-		p.Print(1)
-		nfa.Dot("test-nfa.dot", pat)
-	}
-	assert.Equal(t, m, wantMatch)
-	assert.True(t, slices.Equal(groups, wantGroups))
+	match(t, mach, s, wantMatch, wantGroups...)
 }
 
 func matchNfaBounded(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string) {
 	//t.Helper()
 	p, err := ParseBounded(pat)
 	assert.NoError(t, err)
-	nfa := MakeNfa(p)
-	groups, m := MatchNfa(nfa, s)
-	if m != wantMatch || !slices.Equal(groups, wantGroups) {
-		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
-		fmt.Printf("parsed (see test-nfa-bounded.dot):\n")
-		p.Print(1)
-		nfa.Dot("test-nfa-bounded.dot", pat)
-	}
-	assert.Equal(t, m, wantMatch)
-	assert.True(t, slices.Equal(groups, wantGroups))
+	match(t, MakeNfa(p), s, wantMatch, wantGroups...)
 }
 
 func matchDfa(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string) {
 	//t.Helper()
-	p, err := Parse(pat)
+	mach, err := NewDfa(pat)
 	assert.NoError(t, err)
-	nfa := MakeNfa(p)
-	dfa := MakeDfa(nfa)
-	groups, m := MatchDfa(dfa, s)
-	if m != wantMatch || !slices.Equal(groups, wantGroups) {
-		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
-		fmt.Printf("parsed (see test-dfa.dot):\n")
-		p.Print(1)
-		dfa.Dot("test-dfa.dot", pat)
-	}
-	assert.Equal(t, m, wantMatch)
-	assert.True(t, slices.Equal(groups, wantGroups))
+	match(t, mach, s, wantMatch, wantGroups...)
 }
 
 func expectMatch(t *testing.T, match matchFunc, pat, s string, wantGroups ...string) {
 	//t.Helper()
+	ok := false
+	defer func() {
+		fmt.Printf("expectMatch %v %v %v -> %v\n", pat, s, wantGroups, ok)
+	}()
+
 	match(t, pat, s, true, wantGroups...)
+	ok = true
 }
 
 func expectNoMatch(t *testing.T, match matchFunc, pat, s string, wantGroups ...string) {
 	//t.Helper()
+	ok := false
+	defer func() {
+		defer fmt.Printf("expectNoMatch %v %v %v -> %v\n", pat, s, wantGroups, ok)
+	}()
+
 	match(t, pat, s, false)
+	ok = true
 }
 
 func TestRe(t *testing.T) {
@@ -81,7 +102,12 @@ func TestRe(t *testing.T) {
 
 	for _, test := range matchers {
 		m := test.matcher
-		t.Run(test.name, func(t *testing.T) {
+
+		// ugh, t.Run makes assert lib not give proper stack traces.. why?
+		//t.Run(test.name, func(t *testing.T) {
+
+		fmt.Printf("name: %v\n", test.name)
+		if true {
 			expectMatch(t, m, "a", "a")
 			expectMatch(t, m, "[a-z]", "a")
 			expectNoMatch(t, m, "[a-z]", "X")
@@ -147,7 +173,7 @@ func TestRe(t *testing.T) {
 
 			// greedy matching should make this match fail because all the a's are in the group.
 			expectNoMatch(t, m, "a(?a*)ab", "aaaab")
-		})
+		}
 	}
 }
 

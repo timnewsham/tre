@@ -205,7 +205,19 @@ func matchChar(d *Dfa, ch rune) *Dfa {
 	return nil
 }
 
-func MatchDfa(d *Dfa, s string) ([]string, bool) {
+type Matcher interface {
+	Match(s string) ([]string, bool)
+}
+
+func NewDfa(re string) (*Dfa, error) {
+	nfa, err := NewNfa(re)
+	if err != nil {
+		return nil, err
+	}
+	return MakeDfa(nfa), nil
+}
+
+func (d *Dfa) Match(s string) ([]string, bool) {
 	capGroups := make(map[int]*strings.Builder)
 	maxGroup := 0
 	for _, ch := range []rune(s) {
@@ -229,9 +241,12 @@ func MatchDfa(d *Dfa, s string) ([]string, bool) {
 		return nil, false
 	}
 
-	groups := make([]string, maxGroup)
-	for n, g := range capGroups {
-		groups[n-1] = g.String()
+	var groups []string
+	if maxGroup > 0 {
+		groups = make([]string, maxGroup)
+		for n, g := range capGroups {
+			groups[n-1] = g.String()
+		}
 	}
 	return groups, true
 }
