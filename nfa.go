@@ -3,14 +3,21 @@ package tre
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 )
 
 type Nfa struct {
 	class  Ranges // unless split is true
+	caps   []int  // unless split is true
 	next1  *Nfa
 	next2  *Nfa // if split is true
 	split  bool
 	accept bool
+}
+
+func (p *Nfa) String() string {
+	return fmt.Sprintf("[class=%v caps=%v split=%v accept=%v]", p.class, p.caps, p.split, p.accept)
 }
 
 func (p *Nfa) Dot(fn, label string) {
@@ -49,6 +56,8 @@ func (p *Nfa) Dot(fn, label string) {
 
 		if p.accept {
 			fmt.Fprintf(fp, "  node_%d [label = \"accept\"]\n", id)
+		} else if len(p.caps) > 0 {
+			fmt.Fprintf(fp, "  node_%d [label = \"%d\\ncaps=%v\"]\n", id, id, p.caps)
 		} else {
 			fmt.Fprintf(fp, "  node_%d [label = \"%d\"]\n", id, id)
 		}
@@ -92,7 +101,7 @@ func nfaFrag(p *Parsed) *Frag {
 	switch p.typ {
 	case ParseClass:
 		// -->[class]-->
-		n := &Nfa{class: p.class}
+		n := &Nfa{class: p.class, caps: p.caps}
 		return frag(n, &n.next1)
 	case ParseStar:
 		//      V------------\
@@ -169,7 +178,10 @@ func advance(ns []*Nfa, ch rune) []*Nfa {
 	visited := make(map[*Nfa]struct{})
 	var l []*Nfa
 	for _, n := range ns {
-		if !n.split && !n.accept && n.class.Contains(ch) {
+		switch {
+		case n.split:
+		case n.accept:
+		case n.class.Contains(ch):
 			l = addTargs(n.next1, visited, l)
 		}
 	}
@@ -185,14 +197,56 @@ func accepts(ns []*Nfa) bool {
 	return false
 }
 
-func MatchNfa(n *Nfa, s string) bool {
+func getCaps(ns []*Nfa) []int {
+	var caps []int
+	var prev *Nfa
+	for _, n := range ns {
+		switch {
+		case n.accept:
+		default:
+			// XXX TODO: remove extra checks at some point.
+			if prev != nil && !slices.Equal(n.caps, prev.caps) {
+				fmt.Printf("XXXX inconsistent caps!! %v vs %v\n", prev, n)
+			}
+			prev = n
+			caps = n.caps
+		}
+	}
+	return caps
+}
+
+func MatchNfa(n *Nfa, s string) ([]string, bool) {
+	capGroups := make(map[int]*strings.Builder)
+	maxGroup := 0
 	ns := advanceEpsilon(n) // follow epsilon edges from start
 	for pos, ch := range []rune(s) {
 		_ = pos
+		caps := getCaps(ns)
+
 		ns = advance(ns, ch)
 		if len(ns) == 0 {
-			return false
+			return nil, false
+		}
+
+		for _, capIdx := range caps {
+			if _, ok := capGroups[capIdx]; !ok {
+				if capIdx > maxGroup {
+					maxGroup = capIdx
+				}
+				capGroups[capIdx] = &strings.Builder{}
+			}
+			capGroups[capIdx].WriteRune(ch)
 		}
 	}
-	return accepts(ns)
+
+	if !accepts(ns) {
+		return nil, false
+	}
+
+	groups := make([]string, maxGroup)
+	for n, g := range capGroups {
+		groups[n-1] = g.String()
+		fmt.Printf("captured %d: %q\n", n, groups[n-1])
+	}
+	return groups, true
 }

@@ -2,6 +2,7 @@ package tre
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -25,14 +26,15 @@ type Parsed struct {
 	typ   ParseType
 	left  *Parsed
 	right *Parsed
-	class Ranges
+	class Ranges // ParseClass
+	caps  []int  // ParseClass
 }
 
 func (p *Parsed) Print(indent int) {
 	tab := strings.Repeat("  ", indent)
 	switch p.typ {
 	case ParseClass:
-		fmt.Printf("%s%v class=%v\n", tab, p.typ, p.class)
+		fmt.Printf("%s%v class=%v caps=%v\n", tab, p.typ, p.class, p.caps)
 	default:
 		fmt.Printf("%s%v\n", tab, p.typ)
 	}
@@ -162,6 +164,9 @@ func parseClassRange(p *Lexer, terminal rune) (rune, rune, error) {
 		if err != nil {
 			return 0, 0, err
 		}
+		if end < start {
+			return 0, 0, fmt.Errorf("class range from %v to %v is empty", showRune(start), showRune(end))
+		}
 		return start, end, nil
 	} else {
 		return start, start, nil
@@ -214,21 +219,42 @@ func parseReChar(p *Lexer, terminal rune) (rune, error) {
 	return ch, nil
 }
 
+type Parser struct {
+	capNum  int
+	curCaps []int
+}
+
 // parseReAtom parses an re which is not compound or is parenthesized.
-// reAtom := "." | char | charclass | ( re )
-func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
+// reAtom := "." | char | charclass | ( "?"? re )
+func parseReAtom(parser *Parser, lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseReAtom")()
 	pos := lex.pos
 	peek := lex.peek()
 	switch peek {
 	case '(':
 		lex.advance()
-		re1, err := ParseRe(lex, terminal)
+		capNum := 0
+		var prevCaps []int
+		if lex.peek() == '?' {
+			lex.advance()
+
+			parser.capNum++
+			capNum = parser.capNum
+			prevCaps = parser.curCaps
+			parser.curCaps = append(slices.Clone(prevCaps), capNum)
+		}
+
+		re1, err := ParseRe(parser, lex, terminal)
 		if err != nil {
 			return nil, err
 		}
 		if err := ParseExpect(lex, ')'); err != nil {
 			return nil, err
+		}
+
+		if capNum != 0 {
+			parser.curCaps = prevCaps
+			//return &Parsed{typ: ParseCap, left: re1, capNum: capNum}, nil
 		}
 		return re1, nil
 
@@ -242,25 +268,25 @@ func parseReAtom(lex *Lexer, terminal rune) (*Parsed, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &Parsed{typ: ParseClass, class: rs}, nil
+		return &Parsed{typ: ParseClass, class: rs, caps: parser.curCaps}, nil
 
 	case '.':
 		lex.next()
-		return &Parsed{typ: ParseClass, class: FullRanges()}, nil
+		return &Parsed{typ: ParseClass, class: FullRanges(), caps: parser.curCaps}, nil
 
 	default:
 		ch, err := parseReChar(lex, terminal)
 		if err != nil {
 			return nil, err
 		}
-		return &Parsed{typ: ParseClass, class: newRange1(ch)}, nil
+		return &Parsed{typ: ParseClass, class: newRange1(ch), caps: parser.curCaps}, nil
 	}
 }
 
 // reConcat := reAtom ("*" | "+" | "?") reConcat*
-func parseReConcat(lex *Lexer, terminal rune) (*Parsed, error) {
+func parseReConcat(parser *Parser, lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseReConcat")()
-	re1, err := parseReAtom(lex, terminal)
+	re1, err := parseReAtom(parser, lex, terminal)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +303,7 @@ func parseReConcat(lex *Lexer, terminal rune) (*Parsed, error) {
 			lex.advance()
 			re1 = &Parsed{typ: ParseOpt, left: re1}
 		default:
-			re2, err := parseReConcat(lex, terminal)
+			re2, err := parseReConcat(parser, lex, terminal)
 			if err != nil {
 				return nil, err
 			}
@@ -293,16 +319,16 @@ func parseReConcat(lex *Lexer, terminal rune) (*Parsed, error) {
 //
 // ParseRe parses an re which may be compound.
 // re := reConcat ("|" re)*
-func ParseRe(lex *Lexer, terminal rune) (*Parsed, error) {
+func ParseRe(parser *Parser, lex *Lexer, terminal rune) (*Parsed, error) {
 	defer lex.debug("parseRe")()
-	re1, err := parseReConcat(lex, terminal)
+	re1, err := parseReConcat(parser, lex, terminal)
 	if err != nil {
 		return nil, err
 	}
 
 	for lex.peek() == '|' {
 		lex.advance()
-		re2, err := ParseRe(lex, terminal)
+		re2, err := ParseRe(parser, lex, terminal)
 		if err != nil {
 			return nil, err
 		}
@@ -312,8 +338,9 @@ func ParseRe(lex *Lexer, terminal rune) (*Parsed, error) {
 }
 
 func Parse(s string) (*Parsed, error) {
+	parser := &Parser{}
 	lex := newLexer(s)
-	re, err := ParseRe(lex, EOF)
+	re, err := ParseRe(parser, lex, EOF)
 	if err != nil {
 		return nil, err
 	}
@@ -326,6 +353,7 @@ func Parse(s string) (*Parsed, error) {
 
 // ParseBounded parses an RE that is bounded by punctuation, such as /re/.
 func ParseBounded(s string) (*Parsed, error) {
+	parser := &Parser{}
 	lex := newLexer(s)
 
 	pos := lex.pos
@@ -334,7 +362,7 @@ func ParseBounded(s string) (*Parsed, error) {
 		return nil, fmt.Errorf("%d: unexpected bounding character %v", pos, showRune(terminal))
 	}
 
-	re, err := ParseRe(lex, terminal)
+	re, err := ParseRe(parser, lex, terminal)
 	if err != nil {
 		return nil, err
 	}

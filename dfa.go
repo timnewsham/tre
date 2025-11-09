@@ -191,7 +191,7 @@ func MakeDfa(n *Nfa) *Dfa {
 	return dstart
 }
 
-func MatchDfa(d *Dfa, s string) bool {
+func MatchDfa(d *Dfa, s string) ([]string, bool) {
 nextChar:
 	for _, ch := range []rune(s) {
 		for _, edge := range d.edges {
@@ -200,7 +200,13 @@ nextChar:
 				continue nextChar
 			}
 		}
-		return false
+		return nil, false
 	}
-	return d.accept
+
+	if !d.accept {
+		return nil, false
+	}
+
+	var groups []string // XXX TODO fill in captures
+	return groups, true
 }

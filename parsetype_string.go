@@ -14,11 +14,12 @@ func _() {
 	_ = x[ParseAlt-3]
 	_ = x[ParseStar-4]
 	_ = x[ParsePlus-5]
+	_ = x[ParseOpt-6]
 }
 
-const _ParseType_name = "ParseErrParseClassParseConcatParseAltParseStarParsePlus"
+const _ParseType_name = "ParseErrParseClassParseConcatParseAltParseStarParsePlusParseOpt"
 
-var _ParseType_index = [...]uint8{0, 8, 18, 29, 37, 46, 55}
+var _ParseType_index = [...]uint8{0, 8, 18, 29, 37, 46, 55, 63}
 
 func (i ParseType) String() string {
 	idx := int(i) - 0

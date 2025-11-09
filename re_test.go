@@ -2,66 +2,71 @@ package tre
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/alecthomas/assert"
 )
 
-type matchFunc func(t *testing.T, pat, s string, wantMatch bool)
+type matchFunc func(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string)
 
-func matchNfa(t *testing.T, pat, s string, wantMatch bool) {
-	t.Helper()
+func matchNfa(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string) {
+	//t.Helper()
 	p, err := Parse(pat)
 	assert.NoError(t, err)
 	nfa := MakeNfa(p)
-	m := MatchNfa(nfa, s)
-	if m != wantMatch {
-		fmt.Printf("match %v with %v failed\n", s, pat)
+	groups, m := MatchNfa(nfa, s)
+
+	if m != wantMatch || !slices.Equal(groups, wantGroups) {
+		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
 		fmt.Printf("parsed:\n")
 		p.Print(1)
 		nfa.Dot("test-nfa.dot", pat)
 	}
 	assert.Equal(t, m, wantMatch)
+	assert.True(t, slices.Equal(groups, wantGroups))
 }
 
-func matchNfaBounded(t *testing.T, pat, s string, wantMatch bool) {
-	t.Helper()
+func matchNfaBounded(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string) {
+	//t.Helper()
 	p, err := ParseBounded(pat)
 	assert.NoError(t, err)
 	nfa := MakeNfa(p)
-	m := MatchNfa(nfa, s)
-	if m != wantMatch {
-		fmt.Printf("match %v with %v failed\n", s, pat)
-		fmt.Printf("parsed:\n")
+	groups, m := MatchNfa(nfa, s)
+	if m != wantMatch || !slices.Equal(groups, wantGroups) {
+		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
+		fmt.Printf("parsed (see test-nfa-bounded.dot):\n")
 		p.Print(1)
-		nfa.Dot("test-nfa.dot", pat)
+		nfa.Dot("test-nfa-bounded.dot", pat)
 	}
 	assert.Equal(t, m, wantMatch)
+	assert.True(t, slices.Equal(groups, wantGroups))
 }
 
-func matchDfa(t *testing.T, pat, s string, wantMatch bool) {
-	t.Helper()
+func matchDfa(t *testing.T, pat, s string, wantMatch bool, wantGroups ...string) {
+	//t.Helper()
 	p, err := Parse(pat)
 	assert.NoError(t, err)
 	nfa := MakeNfa(p)
 	dfa := MakeDfa(nfa)
-	m := MatchDfa(dfa, s)
-	if m != wantMatch {
-		fmt.Printf("match %v with %v failed\n", s, pat)
-		fmt.Printf("parsed:\n")
+	groups, m := MatchDfa(dfa, s)
+	if m != wantMatch || !slices.Equal(groups, wantGroups) {
+		fmt.Printf("match %v with %v was %v %v wanted %v %v\n", s, pat, m, groups, wantMatch, wantGroups)
+		fmt.Printf("parsed (see test-dfa.dot):\n")
 		p.Print(1)
 		dfa.Dot("test-dfa.dot", pat)
 	}
 	assert.Equal(t, m, wantMatch)
+	assert.True(t, slices.Equal(groups, wantGroups))
 }
 
-func expectMatch(t *testing.T, match matchFunc, pat, s string) {
-	t.Helper()
-	match(t, pat, s, true)
+func expectMatch(t *testing.T, match matchFunc, pat, s string, wantGroups ...string) {
+	//t.Helper()
+	match(t, pat, s, true, wantGroups...)
 }
 
-func expectNoMatch(t *testing.T, match matchFunc, pat, s string) {
-	t.Helper()
+func expectNoMatch(t *testing.T, match matchFunc, pat, s string, wantGroups ...string) {
+	//t.Helper()
 	match(t, pat, s, false)
 }
 
@@ -134,6 +139,8 @@ func TestRe(t *testing.T) {
 			expectMatch(t, m, "hello|help", "hello")
 			expectMatch(t, m, "hello|help", "help")
 			expectNoMatch(t, m, "hello|help", "hellop")
+
+			expectMatch(t, m, "he(?ll)o(?a*)", "helloaaa", "ll", "aaa")
 		})
 	}
 }
